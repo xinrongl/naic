@@ -95,4 +95,3 @@ if __name__ == "__main__":
         ]
         for f in tqdm(futures.as_completed(result), total=len(result)):
             f.result()
-

@@ -43,10 +43,25 @@ def get_mask(image, cls):
 
 
 def plot_mask(mask, image=None):
-    palette = [[128, 64, 128], [244, 35, 232], [70, 70, 70], [102, 102, 156],
-               [190, 153, 153], [153, 153, 153], [250, 170, 30], [220, 220, 0]]
+    palette = [
+        [128, 64, 128],
+        [244, 35, 232],
+        [70, 70, 70],
+        [102, 102, 156],
+        [190, 153, 153],
+        [153, 153, 153],
+        [250, 170, 30],
+        [220, 220, 0],
+    ]
     classes = [
-        'water', 'traffic', 'building', 'cropland', 'grassland', 'forest', 'bare soil', 'other'
+        "water",
+        "traffic",
+        "building",
+        "cropland",
+        "grassland",
+        "forest",
+        "bare soil",
+        "other",
     ]
 
     palette_dict = dict(zip(range(100, 801, 100), palette))
@@ -55,10 +70,14 @@ def plot_mask(mask, image=None):
     patches = []
     for label, color in palette_dict.items():
         mask_p[mask == label, :] = color
-        patches.append(mpatches.Patch(facecolor="#{0:02x}{1:02x}{2:02x}".format(color[0], color[1], color[2]),
-                                      label=label_dict[label],
-                                      linewidth=2,
-                                      edgecolor='black'))
+        patches.append(
+            mpatches.Patch(
+                facecolor="#{0:02x}{1:02x}{2:02x}".format(color[0], color[1], color[2]),
+                label=label_dict[label],
+                linewidth=2,
+                edgecolor="black",
+            )
+        )
     mask_p = mask_p.astype(np.uint8)
 
     if image is not None:
@@ -73,6 +92,6 @@ def plot_mask(mask, image=None):
         fig, axs = plt.subplots(1, ncol, figsize=(4 * ncol, 5))
         axs.imshow(mask_p)
         axs.title.set_text("mask")
-    plt.legend(handles=patches, bbox_to_anchor=(1.05, 1), loc='upper left')
+    plt.legend(handles=patches, bbox_to_anchor=(1.05, 1), loc="upper left")
     plt.tight_layout()
     plt.show()
