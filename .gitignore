@@ -1,3 +1,11 @@
+# dirs
 data/
 .idea/
 */__pycache__/
+
+# files
+*.tif
+*.jpg
+*.png
+*.txt
+*.csv
