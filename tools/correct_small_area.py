@@ -33,13 +33,20 @@ def correct_small_area(filename, save_dir):
     in_mask = cv2.imread(str(filename), -1)
     out_mask = np.zeros((256, 256))
     for cls in np.unique(in_mask):
-        if cls == 200:  # ignore traffic
-            label = in_mask == cls
+        cls_mask = cls == in_mask
+        remove_small_objects(
+            cls_mask, min_size=args.threshold, connectivity=4, in_place=True
+        )
+        remove_small_holes(
+            cls_mask, area_threshold=args.threshold, connectivity=4, in_place=True
+        )
+        out_mask[cls_mask] = cls
+    for cls in np.unique(in_mask):
+        cls_mask = cls == in_mask
+        if cls == 200:
+            out_mask[cls_mask] = cls
         else:
-            label = remove_small_holes(
-                in_mask == cls, area_threshold=args.threshold, connectivity=4,
-            )
-        out_mask[label] = cls
+            out_mask[cls_mask & (out_mask == 0)] = cls
     cv2.imwrite(f"{save_dir}/{filename.parts[-1]}", out_mask.astype(np.uint16))
 
 

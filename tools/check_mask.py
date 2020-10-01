@@ -4,14 +4,6 @@ import numpy as np
 import matplotlib.patches as mpatches
 
 
-def zh_ch(string):
-    return string.encode("gbk").decode(errors="ignore")
-
-
-def cv2_imshow(image):
-    cv2.imshow("", image)
-
-
 def get_mask(image, cls):
     return (image == cls).astype(float) * 255
 

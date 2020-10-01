@@ -35,9 +35,9 @@ def mixup(src_id, dst_id, image_dir, mask_dir, output_dir):
     src_cls = np.unique(src_mask)
     dst_cls = np.unique(dst_mask)[0]
     src_cls = src_cls[src_cls != dst_cls]
-    random.shuffle(src_cls)
 
     if src_cls.size > 0:
+        random.shuffle(src_cls)
         n_cls_to_mix = int(len(src_cls) * 0.5)
         src_cls = src_cls[:n_cls_to_mix]
 
@@ -70,7 +70,6 @@ if __name__ == "__main__":
         "-n", "--num", type=int, default=100, help="Number of paired image to mix."
     )
     args = parser.parse_args()
-
     image_dir = args.input_dir.joinpath("image")
     mask_dir = args.input_dir.joinpath("label")
     output_dir = args.output_dir
