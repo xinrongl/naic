@@ -2,7 +2,7 @@
 data/
 .idea/
 .vscode/
-*/__pycache__/
+__pycache__/
 
 # files
 *.tif
@@ -12,6 +12,10 @@ data/
 *.csv
 *.log
 *.pth
+*.pyc
+setup.sh
 
 # scratch file
 *keras*
+
+!src/data
