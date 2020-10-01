@@ -8,9 +8,7 @@ class MyLogger(logging.Logger):
         self.setLevel(self.level)
 
     def set_file_handler(self, filename, level=None):
-        formatter_file = logging.Formatter(
-            "%(asctime)s\t%(name)s\t%(levelname)s\tline:%(lineno)d\t%(message)s"
-        )
+        formatter_file = logging.Formatter("%(asctime)s: %(message)s")
         fh = logging.FileHandler(filename=filename)
         fh.setLevel(level if level else self.level)
         fh.setFormatter(formatter_file)
