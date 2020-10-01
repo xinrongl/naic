@@ -21,6 +21,7 @@ torch.backends.cudnn.benchmark = True
 config = configparser.ConfigParser()
 config.read("cfg.ini")
 encoder_lists = config["model"]["encoder"].split()
+path_dict = dict(config["path"])
 
 parser = argparse.ArgumentParser("Train UNet with SMP api.")
 parser.add_argument("--encoder", default="efficientnet-b5", choices=encoder_lists)
@@ -33,14 +34,14 @@ parser.add_argument(
     help="Directory contains image and label folder",
     type=lambda x: Path(x),
 )
-parser.add_argument("--annotation", help="Path to annotation file")
 parser.add_argument(
     "-m",
     "--model",
     choices=["unet", "linkednet", "fpn", "pspnet", "deeplabv3", "deeplabv3plus", "pan"],
 )
 parser.add_argument("-b", "--batch_size", type=int, default=16)
-parser.add_argument("--num_workers", type=int)
+parser.add_argument("-lr", "--learning_rate", type=float, default=5e-4)
+parser.add_argument("--num_workers", type=int, default=12)
 parser.add_argument("--num_epoch", default=10, type=int)
 parser.add_argument("--loglevel", default="INFO")
 args, _ = parser.parse_known_args()
@@ -81,7 +82,12 @@ model_dict = {
         classes=8,
         activation=args.activation,
     ),
-    "pan": smp.PAN,
+    "pan": smp.PAN(
+        encoder_name=args.encoder,
+        encoder_weights=args.weight,
+        classes=8,
+        activation=args.activation,
+    ),
 }
 
 
@@ -128,7 +134,9 @@ def main():
     loss = smp.utils.losses.JaccardLoss()
     metrics = [smp.utils.metrics.IoU(threshold=0.5)]
 
-    optimizer = torch.optim.Adam(model.parameters(), lr=5e-4, weight_decay=0.0003)
+    optimizer = torch.optim.Adam(
+        model.parameters(), lr=args.learning_rate, weight_decay=0.0003
+    )
     lr_scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=5, gamma=0.1)
     train_epoch = smp.utils.train.TrainEpoch(
         model,
@@ -143,7 +151,7 @@ def main():
         model, loss=loss, metrics=metrics, device=DEVICE, verbose=True,
     )
 
-    checkpoint_path = Path(f"./checkpoints/{TIMESTAMP:%Y%m%d%H%M}")
+    checkpoint_path = Path(f"{path_dict['checkpoints']}/{TIMESTAMP:%Y%m%d%H%M}")
     checkpoint_path.mkdir(parents=True, exist_ok=True)
 
     max_score = 0.0
@@ -165,8 +173,7 @@ if __name__ == "__main__":
     logger = MyLogger(args.loglevel)
     logger.set_stream_handler()
     logger.set_file_handler(
-        f"./logs/{TIMESTAMP:%Y%m%d%H%M}_{args.model}_{args.encoder}.log"
+        f"{path_dict['logs']}/{TIMESTAMP:%Y%m%d%H%M}_{args.model}_{args.encoder}.log"
     )
-    with Path(__file__).open() as f:
-        logger.info(f.read())
+    logger.info(args)
     main()
