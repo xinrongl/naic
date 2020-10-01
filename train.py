@@ -36,7 +36,11 @@ parser.add_argument(
 parser.add_argument("--activation", default="sigmoid")
 parser.add_argument(
     "--arch",
-    choices=["unet", "linkednet", "fpn", "pspnet", "deeplabv3", "deeplabv3plus", "pan"],
+    required=True,
+    help="model arch: "
+    + " | ".join(
+        ["unet", "linkednet", "fpn", "pspnet", "deeplabv3", "deeplabv3plus", "pan"]
+    ),
 )
 parser.add_argument("-b", "--batch_size", type=int, default=16)
 parser.add_argument("-lr", "--learning_rate", type=float, default=5e-4)
@@ -167,7 +171,9 @@ def main():
         model, loss=loss, metrics=metrics, device=DEVICE, verbose=True,
     )
 
-    checkpoint_path = Path(f"{path_dict['checkpoints']}/{TIMESTAMP:%Y%m%d%H%M}")
+    checkpoint_path = Path(
+        f"{path_dict['checkpoints']}/{args.arch}_{args.encoder}/{TIMESTAMP:%Y%m%d%H%M}"
+    )
     checkpoint_path.mkdir(parents=True, exist_ok=True)
 
     max_score = 0.0
@@ -186,11 +192,11 @@ def main():
 
 
 if __name__ == "__main__":
+    logger_dir = Path(f"{path_dict['logs']}/{args.arch}_{args.encoder}")
+    logger_dir.mkdir(parents=True, exist_ok=True)
     logger = MyLogger(args.loglevel)
     logger.set_stream_handler()
-    logger.set_file_handler(
-        f"{path_dict['logs']}/{TIMESTAMP:%Y%m%d%H%M}_{args.model}_{args.encoder}.log"
-    )
+    logger.set_file_handler(f"{logger_dir}/{TIMESTAMP:%Y%m%d%H%M}.log")
     for arg, val in sorted(vars(args).items()):
         logger.info(f"{arg}: {val}")
     main()
