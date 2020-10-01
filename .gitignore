@@ -1,6 +1,7 @@
 # dirs
 data/
 .idea/
+.vscode/
 */__pycache__/
 
 # files
