@@ -9,3 +9,8 @@ data/
 *.png
 *.txt
 *.csv
+*.log
+*.pth
+
+# scratch file
+*keras*
