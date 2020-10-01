@@ -7,6 +7,7 @@ import pandas as pd
 import segmentation_models_pytorch as smp
 import torch
 from torch.utils.data import DataLoader
+from torch.optim import lr_scheduler
 
 from src.data import aug
 from src.data.dataset import NAICDataset
@@ -24,28 +25,35 @@ encoder_lists = config["model"]["encoder"].split()
 path_dict = dict(config["path"])
 
 parser = argparse.ArgumentParser("Train UNet with SMP api.")
-parser.add_argument("--encoder", default="efficientnet-b5", choices=encoder_lists)
+parser.add_argument(
+    "--encoder",
+    default="efficientnet-b5",
+    help="model encoder: " + " | ".join(encoder_lists),
+)
 parser.add_argument(
     "-w", "--weight", default="imagenet", help="Encoder pretrained weight"
 )
 parser.add_argument("--activation", default="sigmoid")
 parser.add_argument(
-    "--data_dir",
-    help="Directory contains image and label folder",
-    type=lambda x: Path(x),
-)
-parser.add_argument(
-    "-m",
-    "--model",
+    "--arch",
     choices=["unet", "linkednet", "fpn", "pspnet", "deeplabv3", "deeplabv3plus", "pan"],
 )
 parser.add_argument("-b", "--batch_size", type=int, default=16)
 parser.add_argument("-lr", "--learning_rate", type=float, default=5e-4)
+parser.add_argument("-wd", "--weight_decay", type=float, default=3e-4)
+parser.add_argument("--patience", default=5, type=int)
 parser.add_argument("--num_workers", type=int, default=12)
 parser.add_argument("--num_epoch", default=10, type=int)
 parser.add_argument("--loglevel", default="INFO")
+parser.add_argument(
+    "--resume",
+    default="",
+    type=str,
+    metavar="PATH",
+    help="path to latest checkpoint (default: none)",
+)
 args, _ = parser.parse_known_args()
-model_dict = {
+arch_dict = {
     "unet": smp.Unet(
         encoder_name=args.encoder,
         encoder_weights=args.weight,
@@ -92,10 +100,15 @@ model_dict = {
 
 
 def main():
-    images_dir = args.data_dir.joinpath("image")
-    masks_dir = args.data_dir.joinpath("label")
-    label_df = pd.read_csv(args.data_dir.joinpath("label.csv"))
-    model = model_dict[args.model]
+    data_dir = Path(path_dict["train_data"])
+    images_dir = data_dir.joinpath("image")
+    masks_dir = data_dir.joinpath("label")
+    label_df = pd.read_csv(data_dir.joinpath("label.csv"))
+    if args.resume:
+        logger.info(f"Loading checkpoints and resume training from {args.resume}")
+        model = torch.load(args.resume)
+    else:
+        model = arch_dict[args.arch]
 
     preprocessing_fn = smp.encoders.get_preprocessing_fn(args.encoder, args.weight)
 
@@ -135,9 +148,12 @@ def main():
     metrics = [smp.utils.metrics.IoU(threshold=0.5)]
 
     optimizer = torch.optim.Adam(
-        model.parameters(), lr=args.learning_rate, weight_decay=0.0003
+        model.parameters(), lr=args.learning_rate, weight_decay=args.weight_decay
     )
-    lr_scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=5, gamma=0.1)
+    scheduler = lr_scheduler.StepLR(optimizer, step_size=5, gamma=0.1)
+    # scheduler = lr_scheduler.ReduceLROnPlateau(
+    #     optimizer, mode="min", factor=0.2, patience=5, verbose=False
+    # )
     train_epoch = smp.utils.train.TrainEpoch(
         model,
         loss=loss,
@@ -156,10 +172,10 @@ def main():
 
     max_score = 0.0
     for epoch in range(args.num_epoch):
-        print(f"Epoch: {epoch+1}\tlr: {lr_scheduler.get_last_lr()}")
+        print(f"Epoch: {epoch+1}\tlr: {scheduler.get_last_lr()}")
         train_logs = train_epoch.run(train_loader)
         valid_logs = valid_epoch.run(valid_loader)
-        lr_scheduler.step()
+        scheduler.step()
         logger.debug(train_logs, valid_logs)
 
         # do something (save model, change lr, etc.)
@@ -175,5 +191,6 @@ if __name__ == "__main__":
     logger.set_file_handler(
         f"{path_dict['logs']}/{TIMESTAMP:%Y%m%d%H%M}_{args.model}_{args.encoder}.log"
     )
-    logger.info(args)
+    for arg, val in sorted(vars(args).items()):
+        logger.info(f"{arg}: {val}")
     main()
