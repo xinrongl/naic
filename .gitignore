@@ -3,6 +3,7 @@ data/
 .idea/
 .vscode/
 __pycache__/
+heckpoints/
 
 # files
 *.tif
@@ -13,6 +14,7 @@ __pycache__/
 *.log
 *.pth
 *.pyc
+*.zip
 setup.sh
 
 # scratch file

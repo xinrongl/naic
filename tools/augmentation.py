@@ -14,7 +14,6 @@ data/train
 
 import argparse
 import random
-
 from concurrent import futures
 from pathlib import Path
 

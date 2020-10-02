@@ -1,4 +1,5 @@
 from pathlib import Path
+
 import cv2
 import numpy as np
 from check_mask import plot_mask

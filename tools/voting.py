@@ -2,15 +2,16 @@
 python ../scripts/voting.py --results results1/ results2/ results3/ --out voted_results
 """
 import argparse
+from concurrent import futures
 from concurrent.futures import Executor
-import cv2
 from pathlib import Path
+
+import cv2
+import mmcv
 import numpy as np
 from joblib import Parallel, delayed
 from scipy import stats
-import mmcv
 from tqdm import tqdm
-from concurrent import futures
 
 parser = argparse.ArgumentParser(description="voting")
 parser.add_argument("--out", type=str, default="")

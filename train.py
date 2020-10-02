@@ -6,8 +6,8 @@ from pathlib import Path
 import pandas as pd
 import segmentation_models_pytorch as smp
 import torch
+from torch import optim
 from torch.utils.data import DataLoader
-from torch.optim import lr_scheduler
 
 from src.data import aug
 from src.data.dataset import NAICDataset
@@ -23,8 +23,7 @@ config = configparser.ConfigParser()
 config.read("cfg.ini")
 encoder_lists = config["model"]["encoder"].split()
 path_dict = dict(config["path"])
-
-parser = argparse.ArgumentParser("Train UNet with SMP api.")
+parser = argparse.ArgumentParser("Train segmentation model with SMP api.")
 parser.add_argument(
     "--encoder",
     default="efficientnet-b5",
@@ -45,6 +44,7 @@ parser.add_argument(
 parser.add_argument("-b", "--batch_size", type=int, default=16)
 parser.add_argument("-lr", "--learning_rate", type=float, default=5e-4)
 parser.add_argument("-wd", "--weight_decay", type=float, default=3e-4)
+parser.add_argument("--threshold", type=float, default=0.6)
 parser.add_argument("--patience", default=5, type=int)
 parser.add_argument("--num_workers", type=int, default=12)
 parser.add_argument("--num_epoch", default=10, type=int)
@@ -103,19 +103,17 @@ arch_dict = {
 }
 
 
+def save_checkpoint(state, filename):
+    torch.save(state, filename)
+
+
 def main():
     data_dir = Path(path_dict["train_data"])
     images_dir = data_dir.joinpath("image")
     masks_dir = data_dir.joinpath("label")
-    label_df = pd.read_csv(data_dir.joinpath("label.csv"))
-    if args.resume:
-        logger.info(f"Loading checkpoints and resume training from {args.resume}")
-        model = torch.load(args.resume)
-    else:
-        model = arch_dict[args.arch]
+    label_df = pd.read_csv(data_dir.joinpath("la.csv"))
 
     preprocessing_fn = smp.encoders.get_preprocessing_fn(args.encoder, args.weight)
-
     train_dataset = NAICDataset(
         images_dir=images_dir,
         masks_dir=masks_dir,
@@ -149,15 +147,22 @@ def main():
         num_workers=int(args.num_workers / 3),
     )
     loss = smp.utils.losses.JaccardLoss()
-    metrics = [smp.utils.metrics.IoU(threshold=0.5)]
-
-    optimizer = torch.optim.Adam(
+    metrics = [smp.utils.metrics.IoU(threshold=args.threshold)]
+    model = arch_dict[args.arch]
+    optimizer = optim.Adam(
         model.parameters(), lr=args.learning_rate, weight_decay=args.weight_decay
     )
-    scheduler = lr_scheduler.StepLR(optimizer, step_size=5, gamma=0.1)
-    # scheduler = lr_scheduler.ReduceLROnPlateau(
-    #     optimizer, mode="min", factor=0.2, patience=5, verbose=False
-    # )
+    if args.resume:
+        checkpoints = torch.load(args.resume)
+        model.load_state_dict(checkpoints["state_dict"])
+        optimizer.load_state_dict(checkpoints["optimizer"])
+        logger.info(
+            f"=> loaded checkpoint '{args.resume}' (epoch {args.resume.name.split('_')[1]})"
+        )
+    # scheduler = lr_scheduler.StepLR(optimizer, step_size=5, gamma=0.1)
+    scheduler = optim.lr_scheduler.ReduceLROnPlateau(
+        optimizer, mode="min", factor=0.2, patience=2, verbose=True
+    )
     train_epoch = smp.utils.train.TrainEpoch(
         model,
         loss=loss,
@@ -166,7 +171,6 @@ def main():
         device=DEVICE,
         verbose=True,
     )
-
     valid_epoch = smp.utils.train.ValidEpoch(
         model, loss=loss, metrics=metrics, device=DEVICE, verbose=True,
     )
@@ -178,17 +182,27 @@ def main():
 
     max_score = 0.0
     for epoch in range(args.num_epoch):
-        print(f"Epoch: {epoch+1}\tlr: {scheduler.get_last_lr()}")
+        logger.info(f"Epoch: {epoch+1}\tlr: {optimizer.param_groups[0]['lr']}")
+
         train_logs = train_epoch.run(train_loader)
         valid_logs = valid_epoch.run(valid_loader)
         scheduler.step()
         logger.debug(train_logs, valid_logs)
 
-        # do something (save model, change lr, etc.)
-        if max_score < valid_logs["iou_score"]:
-            max_score = valid_logs["iou_score"]
-            torch.save(model, checkpoint_path.joinpath(f"best_model_{epoch+1}.pth"))
-            logger.info("Model saved!")
+        val_iou = valid_logs["iou_score"]
+        if max_score < val_iou:
+            max_score = val_iou
+            save_checkpoint(
+                {
+                    "epoch": epoch,
+                    "arch": args.arch,
+                    "encoder": args.encoder,
+                    "state_dict": model.state_dict(),
+                    "best_iou": val_iou,
+                    "optimizer": optimizer.state_dict(),
+                },
+                checkpoint_path.joinpath(f"epoch_{epoch}_{val_iou}.pth"),
+            )
 
 
 if __name__ == "__main__":
