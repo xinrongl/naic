@@ -20,4 +20,6 @@ setup.sh
 # scratch file
 *keras*
 
+# exclued
 !src/data
+!requirements.txt
