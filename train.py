@@ -8,6 +8,7 @@ import segmentation_models_pytorch as smp
 import torch
 from torch import optim
 from torch.utils.data import DataLoader
+import torch.nn
 
 from src.data import aug
 from src.data.dataset import NAICDataset
@@ -55,6 +56,9 @@ parser.add_argument(
     type=str,
     metavar="PATH",
     help="path to latest checkpoint (default: none)",
+)
+parser.add_argument(
+    "--parallel", action="store_true", help="Use multi-gpus for training"
 )
 args, _ = parser.parse_known_args()
 arch_dict = {
@@ -111,7 +115,7 @@ def main():
     data_dir = Path(path_dict["train_data"])
     images_dir = data_dir.joinpath("image")
     masks_dir = data_dir.joinpath("label")
-    label_df = pd.read_csv(data_dir.joinpath("la.csv"))
+    label_df = pd.read_csv(data_dir.joinpath("label.csv"))
 
     preprocessing_fn = smp.encoders.get_preprocessing_fn(args.encoder, args.weight)
     train_dataset = NAICDataset(
@@ -159,6 +163,10 @@ def main():
         logger.info(
             f"=> loaded checkpoint '{args.resume}' (epoch {args.resume.name.split('_')[1]})"
         )
+
+    if args.parallel:
+        model = torch.nn.DataParallel(model).cuda()
+
     # scheduler = lr_scheduler.StepLR(optimizer, step_size=5, gamma=0.1)
     scheduler = optim.lr_scheduler.ReduceLROnPlateau(
         optimizer, mode="min", factor=0.2, patience=2, verbose=True
@@ -172,7 +180,11 @@ def main():
         verbose=True,
     )
     valid_epoch = smp.utils.train.ValidEpoch(
-        model, loss=loss, metrics=metrics, device=DEVICE, verbose=True,
+        model,
+        loss=loss,
+        metrics=metrics,
+        device=DEVICE,
+        verbose=True,
     )
 
     checkpoint_path = Path(
