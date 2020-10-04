@@ -1,3 +1,6 @@
+# (1) train segmentation model from the scratch using deeplabv3plus and efficientnet-b3 as encoder.
+# cd naic
+# python train.py --encoder efficientnet-b3 --weight imagenet --arch deeplabv3plus --batch_size 48 --num_workers 12 --parallel --num_epoch 10
 import argparse
 import configparser
 from datetime import datetime
@@ -6,12 +9,13 @@ from pathlib import Path
 import pandas as pd
 import segmentation_models_pytorch as smp
 import torch
+import torch.nn
 from torch import optim
 from torch.utils.data import DataLoader
-import torch.nn
 
 from src.data import aug
 from src.data.dataset import NAICDataset
+from src.optimizer import RAdam
 from src.utiles.logger import MyLogger
 
 TIMESTAMP = datetime.now()
@@ -43,10 +47,10 @@ parser.add_argument(
     ),
 )
 parser.add_argument("-b", "--batch_size", type=int, default=16)
-parser.add_argument("-lr", "--learning_rate", type=float, default=5e-4)
+parser.add_argument("-lr", "--learning_rate", type=float, default=5e-5)
 parser.add_argument("-wd", "--weight_decay", type=float, default=3e-4)
 parser.add_argument("--threshold", type=float, default=0.6)
-parser.add_argument("--patience", default=5, type=int)
+parser.add_argument("--patience", default=2, type=int)
 parser.add_argument("--num_workers", type=int, default=12)
 parser.add_argument("--num_epoch", default=10, type=int)
 parser.add_argument("--loglevel", default="INFO")
@@ -60,6 +64,7 @@ parser.add_argument(
 parser.add_argument(
     "--parallel", action="store_true", help="Use multi-gpus for training"
 )
+parser.add_argument("--test", action="store_true", help="Test code use small dataset")
 args, _ = parser.parse_known_args()
 arch_dict = {
     "unet": smp.Unet(
@@ -116,7 +121,12 @@ def main():
     images_dir = data_dir.joinpath("image")
     masks_dir = data_dir.joinpath("label")
     label_df = pd.read_csv(data_dir.joinpath("label.csv"))
+    if args.test:
+        train_df = label_df[label_df["label"] == "train"][:1000]
+        val_df = label_df[label_df["label"] == "val"][:1000]
+        label_df = pd.concat([train_df, val_df])
 
+    logger.info(f"Use {len(label_df)} for trianing")
     preprocessing_fn = smp.encoders.get_preprocessing_fn(args.encoder, args.weight)
     train_dataset = NAICDataset(
         images_dir=images_dir,
@@ -153,7 +163,10 @@ def main():
     loss = smp.utils.losses.JaccardLoss()
     metrics = [smp.utils.metrics.IoU(threshold=args.threshold)]
     model = arch_dict[args.arch]
-    optimizer = optim.Adam(
+    # optimizer = optim.Adam(
+    #     model.parameters(), lr=args.learning_rate, weight_decay=args.weight_decay
+    # )
+    optimizer = RAdam(
         model.parameters(), lr=args.learning_rate, weight_decay=args.weight_decay
     )
     if args.resume:
@@ -167,9 +180,9 @@ def main():
     if args.parallel:
         model = torch.nn.DataParallel(model).cuda()
 
-    # scheduler = lr_scheduler.StepLR(optimizer, step_size=5, gamma=0.1)
+    # scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=5, gamma=0.1)
     scheduler = optim.lr_scheduler.ReduceLROnPlateau(
-        optimizer, mode="min", factor=0.2, patience=2, verbose=True
+        optimizer, mode="min", factor=0.1, patience=args.patience, verbose=True
     )
     train_epoch = smp.utils.train.TrainEpoch(
         model,
@@ -194,26 +207,29 @@ def main():
 
     max_score = 0.0
     for epoch in range(args.num_epoch):
-        logger.info(f"Epoch: {epoch+1}\tlr: {optimizer.param_groups[0]['lr']}")
+        logger.info(f"Epoch: {epoch}\tlr: {optimizer.param_groups[0]['lr']}")
 
         train_logs = train_epoch.run(train_loader)
         valid_logs = valid_epoch.run(valid_loader)
-        scheduler.step()
-        logger.debug(train_logs, valid_logs)
+        train_loss, train_score = train_logs.values()
+        val_loss, val_score = valid_logs.values()
+        logger.info(
+            f"train loss: {train_loss:.4f} | val loss: {val_loss:.4f} | train score: {train_score:.4f} | val score: {val_score:.4f}"
+        )
+        scheduler.step(val_loss)
 
-        val_iou = valid_logs["iou_score"]
-        if max_score < val_iou:
-            max_score = val_iou
+        if max_score < val_score:
+            max_score = val_score
             save_checkpoint(
                 {
                     "epoch": epoch,
                     "arch": args.arch,
                     "encoder": args.encoder,
                     "state_dict": model.state_dict(),
-                    "best_iou": val_iou,
+                    "best_iou": val_score,
                     "optimizer": optimizer.state_dict(),
                 },
-                checkpoint_path.joinpath(f"epoch_{epoch}_{val_iou}.pth"),
+                checkpoint_path.joinpath(f"epoch_{epoch}_{val_score:.4f}.pth"),
             )
 
 
