@@ -3,6 +3,7 @@
 # python train.py --encoder efficientnet-b3 --weight imagenet --arch deeplabv3plus --batch_size 48 --num_workers 12 --parallel --num_epoch 10
 import argparse
 import configparser
+from collections import OrderedDict
 from datetime import datetime
 from pathlib import Path
 
@@ -14,7 +15,7 @@ from torch import optim
 from torch.utils.data import DataLoader
 
 from src.data import aug
-from src.data.dataset import NAICDataset
+from src.data.dataset import NAICTrainDataset
 from src.optimizer import RAdam
 from src.utiles.logger import MyLogger
 
@@ -128,7 +129,7 @@ def main():
 
     logger.info(f"Use {len(label_df)} for trianing")
     preprocessing_fn = smp.encoders.get_preprocessing_fn(args.encoder, args.weight)
-    train_dataset = NAICDataset(
+    train_dataset = NAICTrainDataset(
         images_dir=images_dir,
         masks_dir=masks_dir,
         label_df=label_df,
@@ -138,7 +139,7 @@ def main():
         preprocessing=aug.get_preprocessing(preprocessing_fn),
     )
 
-    valid_dataset = NAICDataset(
+    valid_dataset = NAICTrainDataset(
         images_dir=images_dir,
         masks_dir=masks_dir,
         label_df=label_df,
@@ -171,7 +172,11 @@ def main():
     )
     if args.resume:
         checkpoints = torch.load(args.resume)
-        model.load_state_dict(checkpoints["state_dict"])
+        state_dict = OrderedDict()
+        for key, value in checkpoints["state_dict"].items():
+            tmp = key[7:]
+            state_dict[tmp] = value
+        model.load_state_dict(state_dict)
         optimizer.load_state_dict(checkpoints["optimizer"])
         logger.info(
             f"=> loaded checkpoint '{args.resume}' (epoch {args.resume.name.split('_')[1]})"
@@ -225,9 +230,11 @@ def main():
                     "epoch": epoch,
                     "arch": args.arch,
                     "encoder": args.encoder,
+                    "encoder_weight": args.weight,
                     "state_dict": model.state_dict(),
                     "best_iou": val_score,
                     "optimizer": optimizer.state_dict(),
+                    "activation": args.activation,
                 },
                 checkpoint_path.joinpath(f"epoch_{epoch}_{val_score:.4f}.pth"),
             )
