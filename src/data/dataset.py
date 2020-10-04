@@ -2,10 +2,11 @@ from pathlib import Path, PurePath
 
 import cv2
 import numpy as np
+import torch
 from torch.utils.data import Dataset
 
 
-class NAICDataset(Dataset):
+class NAICTrainDataset(Dataset):
     CLASSES = [100, 200, 300, 400, 500, 600, 700, 800]
 
     def __init__(
@@ -63,3 +64,22 @@ class NAICDataset(Dataset):
 
     def __len__(self):
         return len(self.label_df)
+
+
+class NAICTestDataset(Dataset):
+    def __init__(self, test_dir, preprocessing=None) -> None:
+        if not isinstance(test_dir, PurePath):
+            test_dir = Path(test_dir)
+        self.images = sorted(test_dir.glob("*.tif"))
+        self.preprocessing = preprocessing
+
+    def __getitem__(self, index: int):
+        image = cv2.imread(str(self.images[index]))
+        image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+        if self.preprocessing:
+            sample = self.preprocessing(image=image)
+            image = sample["image"]
+        return image, self.images[index].name
+
+    def __len__(self):
+        return len(self.images)
