@@ -177,7 +177,7 @@ def main():
             tmp = key[7:]
             state_dict[tmp] = value
         model.load_state_dict(state_dict)
-        optimizer.load_state_dict(checkpoints["optimizer"])
+        # optimizer.load_state_dict(checkpoints["optimizer"])
         logger.info(
             f"=> loaded checkpoint '{args.resume}' (epoch {args.resume.split('_')[-2]})"
         )
@@ -185,10 +185,10 @@ def main():
     if args.parallel:
         model = torch.nn.DataParallel(model).cuda()
 
-    # scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=5, gamma=0.1)
-    scheduler = optim.lr_scheduler.ReduceLROnPlateau(
-        optimizer, mode="min", factor=0.1, patience=args.patience, verbose=True
-    )
+    scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=5, gamma=0.1)
+    # scheduler = optim.lr_scheduler.ReduceLROnPlateau(
+    #     optimizer, mode="min", factor=0.1, patience=args.patience, verbose=True
+    # )
     train_epoch = smp.utils.train.TrainEpoch(
         model,
         loss=loss,
@@ -212,8 +212,11 @@ def main():
 
     max_score = float(checkpoints["best_iou"]) if args.resume else 0.0
     start_epoch = int(checkpoints["epoch"]) if args.resume else 0
-    for epoch in range(start_epoch, start_epoch + args.num_epoch):
-        logger.info(f"Epoch: {epoch}\tlr: {optimizer.param_groups[0]['lr']}")
+    end_epoch = start_epoch + args.num_epoch
+    for epoch in range(start_epoch, end_epoch):
+        logger.info(
+            f"Epoch: {epoch}/{end_epoch}\tlr: {optimizer.param_groups[0]['lr']}"
+        )
 
         train_logs = train_epoch.run(train_loader)
         valid_logs = valid_epoch.run(valid_loader)
