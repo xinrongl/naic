@@ -179,7 +179,7 @@ def main():
         model.load_state_dict(state_dict)
         optimizer.load_state_dict(checkpoints["optimizer"])
         logger.info(
-            f"=> loaded checkpoint '{args.resume}' (epoch {args.resume.name.split('_')[1]})"
+            f"=> loaded checkpoint '{args.resume}' (epoch {args.resume.split('_')[-2]})"
         )
 
     if args.parallel:
@@ -210,8 +210,9 @@ def main():
     )
     checkpoint_path.mkdir(parents=True, exist_ok=True)
 
-    max_score = 0.0
-    for epoch in range(args.num_epoch):
+    max_score = float(checkpoints["best_iou"]) if args.resume else 0.0
+    start_epoch = int(checkpoints["epoch"]) if args.resume else 0
+    for epoch in range(start_epoch, start_epoch + args.num_epoch):
         logger.info(f"Epoch: {epoch}\tlr: {optimizer.param_groups[0]['lr']}")
 
         train_logs = train_epoch.run(train_loader)
