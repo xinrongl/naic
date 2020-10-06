@@ -51,7 +51,7 @@ parser.add_argument(
 )
 parser.add_argument("-b", "--batch_size", type=int, default=16)
 parser.add_argument("-lr", "--learning_rate", type=float, default=5e-5)
-parser.add_argument("-wd", "--weight_decay", type=float, default=3e-4)
+parser.add_argument("-wd", "--weight_decay", type=float, default=5e-4)
 parser.add_argument("--threshold", type=float, default=0.6)
 parser.add_argument("--patience", default=2, type=int)
 parser.add_argument("--num_workers", type=int, default=12)
@@ -164,6 +164,7 @@ def main():
         num_workers=int(args.num_workers / 3),
     )
     loss = smp.utils.losses.JaccardLoss()
+
     metrics = [
         smp.utils.metrics.IoU(threshold=args.threshold),
         FWIoU(threshold=args.threshold, frequency=cls_frequency),
@@ -209,19 +210,20 @@ def main():
         device=DEVICE,
         verbose=True,
     )
+    checkpoint_path = Path(
+        f"{path_dict['checkpoints']}/{args.arch}_{args.encoder}/{TIMESTAMP:%Y%m%d%H%M}"
+    )
     if not args.test:
-        checkpoint_path = Path(
-            f"{path_dict['checkpoints']}/{args.arch}_{args.encoder}/{TIMESTAMP:%Y%m%d%H%M}"
-        )
         checkpoint_path.mkdir(parents=True, exist_ok=True)
 
     max_score = float(checkpoints["best_iou"]) if args.resume else 0.0
     start_epoch = int(checkpoints["epoch"]) if args.resume else 0
     end_epoch = start_epoch + args.num_epoch
+
     for epoch in range(start_epoch, end_epoch):
         start = datetime.now()
         logger.info(
-            "\nEpoch: [%d | %d] LR: %f"
+            "Epoch: [%d | %d] LR: %f"
             % (epoch, end_epoch, optimizer.param_groups[0]["lr"])
         )
         train_logs = train_epoch.run(train_loader)
@@ -232,7 +234,7 @@ def main():
             f"train loss: {train_loss:.4f} | val loss: {val_loss:.4f} | train iou: {train_iou:.4f} | val iou: {val_iou:.4f} | train fwiou: {train_fwiou:.4f} | val fwiou: {val_fwiou:.4f} | elapsed: {(datetime.now()-start).total_seconds()/60:.1f}mins"
         )
         # scheduler.step(val_loss)
-        scheduler.step()
+        scheduler.step(val_loss)
 
         if max_score < val_iou and not args.test:
             max_score = val_iou
@@ -258,8 +260,8 @@ if __name__ == "__main__":
     logger_dir.mkdir(parents=True, exist_ok=True)
     logger = MyLogger(args.loglevel)
     logger.set_stream_handler()
-    # logger.set_file_handler(f"{logger_dir}/{TIMESTAMP:%Y%m%d%H%M}.log")
     if not args.test:
-        for arg, val in sorted(vars(args).items()):
-            logger.info(f"{arg}: {val}")
+        logger.set_file_handler(f"{logger_dir}/{TIMESTAMP:%Y%m%d%H%M}.log")
+    for arg, val in sorted(vars(args).items()):
+        logger.info(f"{arg}: {val}")
     main()
