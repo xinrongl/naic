@@ -27,8 +27,8 @@ def _threshold(x, threshold=None):
         return x
 
 
-def iou(pr, gt, eps=1e-7, frequency=None, threshold=None, ignore_channels=None):
-    """Calculate Intersection over Union between ground truth and prediction
+def fwiou(pr, gt, eps=1e-7, frequency=None, threshold=None, ignore_channels=None):
+    """Calculate Frequency Weighted IoU between ground truth and prediction
     Args:
         pr (torch.Tensor): predicted tensor
         gt (torch.Tensor):  ground truth tensor
@@ -40,10 +40,10 @@ def iou(pr, gt, eps=1e-7, frequency=None, threshold=None, ignore_channels=None):
 
     pr = _threshold(pr, threshold=threshold)
     pr, gt = _take_channels(pr, gt, ignore_channels=ignore_channels)
-    bs, c, _, _ = pr.size()
+    bs, c, h, w = pr.size()
     if frequency is None:
         frequency = [1] * c
-    weight = np.stack([np.full((256, 256), f) for f in frequency])
+    weight = np.stack([np.full((h, w), f) for f in frequency])
     weight = torch.from_numpy(weight).repeat(bs, 1, 1, 1).to("cuda")
     intersection = torch.sum(gt * pr * weight)
     union = torch.sum(gt * weight) + torch.sum(pr * weight) - intersection + eps
@@ -71,7 +71,7 @@ class FWIoU(base.Metric):
 
     def forward(self, y_pr, y_gt):
         y_pr = self.activation(y_pr)
-        return iou(
+        return fwiou(
             y_pr,
             y_gt,
             frequency=self.frequency,
