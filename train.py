@@ -18,7 +18,7 @@ from src.data import aug
 from src.data.dataset import NAICTrainDataset
 from src.metrics import FWIoU
 from src.optimizer import RAdam
-from src.utiles.logger import MyLogger
+from src.utils.logger import MyLogger
 
 TIMESTAMP = datetime.now()
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
