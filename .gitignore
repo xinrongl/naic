@@ -4,6 +4,7 @@ data/
 .vscode/
 __pycache__/
 checkpoints/
+logs/
 
 # files
 *.tif
