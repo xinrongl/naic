@@ -16,6 +16,7 @@ from torch.utils.data import DataLoader
 
 from src.data import aug
 from src.data.dataset import NAICTrainDataset
+from src.metrics import FWIoU
 from src.optimizer import RAdam
 from src.utiles.logger import MyLogger
 
@@ -29,6 +30,7 @@ config = configparser.ConfigParser()
 config.read("cfg.ini")
 encoder_lists = config["model"]["encoder"].split()
 path_dict = dict(config["path"])
+cls_frequency = list(map(lambda x: float(x), config["data"]["frequency"].split()))
 parser = argparse.ArgumentParser("Train segmentation model with SMP api.")
 parser.add_argument(
     "--encoder",
@@ -123,8 +125,8 @@ def main():
     masks_dir = data_dir.joinpath("label")
     label_df = pd.read_csv(data_dir.joinpath("label.csv"))
     if args.test:
-        train_df = label_df[label_df["label"] == "train"][:1000]
-        val_df = label_df[label_df["label"] == "val"][:1000]
+        train_df = label_df[label_df["label"] == "train"][:100]
+        val_df = label_df[label_df["label"] == "val"][:100]
         label_df = pd.concat([train_df, val_df])
 
     logger.info(f"Use {len(label_df)} for trianing")
@@ -162,7 +164,10 @@ def main():
         num_workers=int(args.num_workers / 3),
     )
     loss = smp.utils.losses.JaccardLoss()
-    metrics = [smp.utils.metrics.IoU(threshold=args.threshold)]
+    metrics = [
+        smp.utils.metrics.IoU(threshold=args.threshold),
+        FWIoU(threshold=args.threshold, frequency=cls_frequency),
+    ]
     model = arch_dict[args.arch]
     # optimizer = optim.Adam(
     #     model.parameters(), lr=args.learning_rate, weight_decay=args.weight_decay
@@ -185,10 +190,10 @@ def main():
     if args.parallel:
         model = torch.nn.DataParallel(model).cuda()
 
-    scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=5, gamma=0.1)
-    # scheduler = optim.lr_scheduler.ReduceLROnPlateau(
-    #     optimizer, mode="min", factor=0.1, patience=args.patience, verbose=True
-    # )
+    # scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=5, gamma=0.1)
+    scheduler = optim.lr_scheduler.ReduceLROnPlateau(
+        optimizer, mode="min", factor=0.2, patience=args.patience, verbose=True
+    )
     train_epoch = smp.utils.train.TrainEpoch(
         model,
         loss=loss,
@@ -204,31 +209,33 @@ def main():
         device=DEVICE,
         verbose=True,
     )
-
-    checkpoint_path = Path(
-        f"{path_dict['checkpoints']}/{args.arch}_{args.encoder}/{TIMESTAMP:%Y%m%d%H%M}"
-    )
-    checkpoint_path.mkdir(parents=True, exist_ok=True)
+    if not args.test:
+        checkpoint_path = Path(
+            f"{path_dict['checkpoints']}/{args.arch}_{args.encoder}/{TIMESTAMP:%Y%m%d%H%M}"
+        )
+        checkpoint_path.mkdir(parents=True, exist_ok=True)
 
     max_score = float(checkpoints["best_iou"]) if args.resume else 0.0
     start_epoch = int(checkpoints["epoch"]) if args.resume else 0
     end_epoch = start_epoch + args.num_epoch
     for epoch in range(start_epoch, end_epoch):
+        start = datetime.now()
         logger.info(
-            f"Epoch: {epoch}/{end_epoch}\tlr: {optimizer.param_groups[0]['lr']}"
+            "\nEpoch: [%d | %d] LR: %f"
+            % (epoch, end_epoch, optimizer.param_groups[0]["lr"])
         )
-
         train_logs = train_epoch.run(train_loader)
         valid_logs = valid_epoch.run(valid_loader)
-        train_loss, train_score = train_logs.values()
-        val_loss, val_score = valid_logs.values()
+        train_loss, train_iou, train_fwiou = train_logs.values()
+        val_loss, val_iou, val_fwiou = valid_logs.values()
         logger.info(
-            f"train loss: {train_loss:.4f} | val loss: {val_loss:.4f} | train score: {train_score:.4f} | val score: {val_score:.4f}"
+            f"train loss: {train_loss:.4f} | val loss: {val_loss:.4f} | train iou: {train_iou:.4f} | val iou: {val_iou:.4f} | train fwiou: {train_fwiou:.4f} | val fwiou: {val_fwiou:.4f} | elapsed: {(datetime.now()-start).total_seconds()/60:.1f}mins"
         )
-        scheduler.step(val_loss)
+        # scheduler.step(val_loss)
+        scheduler.step()
 
-        if max_score < val_score:
-            max_score = val_score
+        if max_score < val_iou and not args.test:
+            max_score = val_iou
             save_checkpoint(
                 {
                     "epoch": epoch,
@@ -236,12 +243,14 @@ def main():
                     "encoder": args.encoder,
                     "encoder_weight": args.weight,
                     "state_dict": model.state_dict(),
-                    "best_iou": val_score,
+                    "best_iou": val_iou,
+                    "best_fwiou": val_fwiou,
                     "optimizer": optimizer.state_dict(),
                     "activation": args.activation,
                 },
-                checkpoint_path.joinpath(f"epoch_{epoch}_{val_score:.4f}.pth"),
+                checkpoint_path.joinpath(f"epoch_{epoch}_{val_iou:.4f}.pth"),
             )
+            logger.info("Save checkpoint!")
 
 
 if __name__ == "__main__":
@@ -249,7 +258,8 @@ if __name__ == "__main__":
     logger_dir.mkdir(parents=True, exist_ok=True)
     logger = MyLogger(args.loglevel)
     logger.set_stream_handler()
-    logger.set_file_handler(f"{logger_dir}/{TIMESTAMP:%Y%m%d%H%M}.log")
-    for arg, val in sorted(vars(args).items()):
-        logger.info(f"{arg}: {val}")
+    # logger.set_file_handler(f"{logger_dir}/{TIMESTAMP:%Y%m%d%H%M}.log")
+    if not args.test:
+        for arg, val in sorted(vars(args).items()):
+            logger.info(f"{arg}: {val}")
     main()
