@@ -3,13 +3,17 @@ import albumentations as albu
 
 def get_training_augmentation():
     train_transform = [
+        albu.VerticalFlip(p=0.5),
         albu.HorizontalFlip(p=0.5),
         albu.ShiftScaleRotate(
             scale_limit=0.5, rotate_limit=0, shift_limit=0.1, p=1, border_mode=0
         ),
         albu.IAAAdditiveGaussianNoise(p=0.2),
         albu.IAAPerspective(p=0.5),
-        albu.OneOf([albu.RandomBrightness(p=1), albu.RandomGamma(p=1)], p=0.9,),
+        albu.OneOf(
+            [albu.RandomBrightness(p=1), albu.RandomGamma(p=1)],
+            p=0.9,
+        ),
         albu.OneOf(
             [
                 albu.IAASharpen(p=1),
@@ -18,7 +22,14 @@ def get_training_augmentation():
             ],
             p=0.9,
         ),
-        albu.OneOf([albu.RandomContrast(p=1), albu.HueSaturationValue(p=1)], p=0.9,),
+        albu.OneOf(
+            [albu.RandomContrast(p=1), albu.HueSaturationValue(p=1)],
+            p=0.9,
+        ),
+        # albu.Normalize(
+        #     mean=(90.93 / 255, 97.91 / 255, 91.62 / 255),
+        #     std=(52.687 / 255, 51.55 / 255, 53.571 / 255),
+        # ),
     ]
     return albu.Compose(train_transform)
 
