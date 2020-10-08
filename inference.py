@@ -18,15 +18,11 @@ parser.add_argument("--checkpoint", help="Path to chechkpoint file")
 parser.add_argument(
     "--input_dir", help="Path to test image directory", default="./data/image_A"
 )
-parser.add_argument("--output_dir", help="Path to store output mask")
+parser.add_argument("-dst", "--output_dir", help="Path to store output mask")
 args = parser.parse_args()
 
-# checkpoint_file = (
-#     "checkpoints/deeplabv3plus_efficientnet-b3/202010041423/epoch_9_0.6591.pth"
-# )
+
 checkpoint = torch.load(args.checkpoint)
-checkpoint["encoder_weight"] = "imagenet"
-checkpoint["activation"] = "sigmoid"
 arch_dict = {
     "unet": smp.Unet(
         encoder_name=checkpoint["encoder"],
@@ -90,14 +86,15 @@ print(f"Number of testing image: {len(test_dataset)}")
 test_loader = DataLoader(test_dataset, batch_size=1, shuffle=False)
 out_dir = Path(args.output_dir)
 out_dir.mkdir(parents=True, exist_ok=True)
-for i, (image, filename) in tqdm(enumerate(test_loader), total=len(test_dataset)):
-    pred = model.predict(image.to(device))
-    pred = pred.squeeze().cpu().numpy().round()
-    out_mask = np.zeros((256, 256))
-    for mask, cls in zip(pred, range(100, 801, 100)):
-        cls_mask = mask == 1.0
-        out_mask[cls_mask] = cls
-    cv2.imwrite(
-        str(out_dir.joinpath(filename[0].replace(".tif", ".png"))),
-        out_mask.astype(np.uint16),
-    )
+with torch.no_grad():
+    for i, (image, filename) in tqdm(enumerate(test_loader), total=len(test_dataset)):
+        pred = model.predict(image.to(device))
+        pred = pred.squeeze().cpu().numpy().round()
+        out_mask = np.zeros((256, 256))
+        for mask, cls in zip(pred, range(100, 801, 100)):
+            cls_mask = mask == 1.0
+            out_mask[cls_mask] = cls
+        cv2.imwrite(
+            str(out_dir.joinpath(filename[0].replace(".tif", ".png"))),
+            out_mask.astype(np.uint16),
+        )
