@@ -18,7 +18,10 @@ from src.data import aug
 from src.data.dataset import NAICTrainDataset
 from src.metrics import FWIoU
 from src.optimizer import RAdam
-from src.utils.logger import MyLogger
+from src.logger import MyLogger
+import warnings
+
+warnings.filterwarnings("ignore", category=DeprecationWarning)
 
 TIMESTAMP = datetime.now()
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
@@ -48,7 +51,9 @@ parser.add_argument(
     + " | ".join(
         ["unet", "linkednet", "fpn", "pspnet", "deeplabv3", "deeplabv3plus", "pan"]
     ),
+    type=lambda arch: arch.lower(),
 )
+parser.add_argument("-depth", "--encoder_depth", type=int, default=5)
 parser.add_argument("-b", "--batch_size", type=int, default=16)
 parser.add_argument("-lr", "--learning_rate", type=float, default=5e-5)
 parser.add_argument("-wd", "--weight_decay", type=float, default=5e-4)
@@ -121,15 +126,17 @@ def save_checkpoint(state, filename):
 
 def main():
     data_dir = Path(path_dict["train_data"])
-    images_dir = data_dir.joinpath("image")
+    # images_dir = data_dir.joinpath("image")
+    images_dir = Path(config["train"]["image_dir"])
+    logger.info(f"Loading images from {images_dir}")
     masks_dir = data_dir.joinpath("label")
-    label_df = pd.read_csv(data_dir.joinpath("label.csv"))
+    label_df = pd.read_csv(data_dir.joinpath("label_90.csv"))
     if args.test:
         train_df = label_df[label_df["label"] == "train"][:100]
         val_df = label_df[label_df["label"] == "val"][:100]
         label_df = pd.concat([train_df, val_df])
 
-    logger.info(f"Use {len(label_df)} for trianing")
+    logger.info(f"Use {len(label_df)} for training")
     preprocessing_fn = smp.encoders.get_preprocessing_fn(args.encoder, args.weight)
     train_dataset = NAICTrainDataset(
         images_dir=images_dir,
@@ -163,19 +170,7 @@ def main():
         shuffle=False,
         num_workers=int(args.num_workers / 3),
     )
-    loss = smp.utils.losses.JaccardLoss()
-
-    metrics = [
-        smp.utils.metrics.IoU(threshold=args.threshold),
-        FWIoU(threshold=args.threshold, frequency=cls_frequency),
-    ]
     model = arch_dict[args.arch]
-    # optimizer = optim.Adam(
-    #     model.parameters(), lr=args.learning_rate, weight_decay=args.weight_decay
-    # )
-    optimizer = RAdam(
-        model.parameters(), lr=args.learning_rate, weight_decay=args.weight_decay
-    )
     if args.resume:
         checkpoints = torch.load(args.resume)
         state_dict = OrderedDict()
@@ -183,18 +178,27 @@ def main():
             tmp = key[7:]
             state_dict[tmp] = value
         model.load_state_dict(state_dict)
-        # optimizer.load_state_dict(checkpoints["optimizer"])
         logger.info(
             f"=> loaded checkpoint '{args.resume}' (epoch {args.resume.split('_')[-2]})"
         )
+    else:
+        model = arch_dict[args.arch]
 
     if args.parallel:
         model = torch.nn.DataParallel(model).cuda()
 
-    # scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=5, gamma=0.1)
-    scheduler = optim.lr_scheduler.ReduceLROnPlateau(
-        optimizer, mode="min", factor=0.2, patience=args.patience, verbose=True
+    metrics = [
+        smp.utils.metrics.IoU(threshold=args.threshold),
+        FWIoU(threshold=args.threshold, frequency=cls_frequency),
+    ]
+    loss = smp.utils.losses.JaccardLoss()
+    optimizer = RAdam(
+        model.parameters(), lr=args.learning_rate, weight_decay=args.weight_decay
     )
+    # scheduler = optim.lr_scheduler.ReduceLROnPlateau(
+    #     optimizer, mode="min", factor=0.2, patience=args.patience, verbose=True
+    # )
+    scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=5, eta_min=5e-8)
     train_epoch = smp.utils.train.TrainEpoch(
         model,
         loss=loss,
@@ -234,7 +238,7 @@ def main():
             f"train loss: {train_loss:.4f} | val loss: {val_loss:.4f} | train iou: {train_iou:.4f} | val iou: {val_iou:.4f} | train fwiou: {train_fwiou:.4f} | val fwiou: {val_fwiou:.4f} | elapsed: {(datetime.now()-start).total_seconds()/60:.1f}mins"
         )
         # scheduler.step(val_loss)
-        scheduler.step(val_loss)
+        scheduler.step()
 
         if max_score < val_iou and not args.test:
             max_score = val_iou
@@ -264,4 +268,5 @@ if __name__ == "__main__":
         logger.set_file_handler(f"{logger_dir}/{TIMESTAMP:%Y%m%d%H%M}.log")
     for arg, val in sorted(vars(args).items()):
         logger.info(f"{arg}: {val}")
+    logger.info("\n")
     main()
