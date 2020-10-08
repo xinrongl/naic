@@ -5,6 +5,9 @@ data/
 __pycache__/
 checkpoints/
 logs/
+analysis/
+notebooks/
+**/.ipynb_checkpoints/
 
 # files
 *.tif
