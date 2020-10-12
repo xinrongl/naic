@@ -8,7 +8,7 @@ def get_training_augmentation():
         albu.ShiftScaleRotate(
             scale_limit=0.5, rotate_limit=0, shift_limit=0.1, p=1, border_mode=0
         ),
-        albu.IAAAdditiveGaussianNoise(p=0.2),
+        albu.IAAAdditiveGaussianNoise(p=1),
         albu.IAAPerspective(p=0.5),
         albu.OneOf(
             [albu.RandomBrightness(p=1), albu.RandomGamma(p=1)],
