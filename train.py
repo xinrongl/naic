@@ -19,9 +19,7 @@ from src.data.dataset import NAICTrainDataset
 from src.metrics import FWIoU
 from src.optimizer import RAdam
 from src.logger import MyLogger
-import warnings
-
-warnings.filterwarnings("ignore", category=DeprecationWarning)
+from src.scheduler import PolynomialLRDecay
 
 TIMESTAMP = datetime.now()
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
@@ -40,9 +38,7 @@ parser.add_argument(
     default="efficientnet-b5",
     help="model encoder: " + " | ".join(encoder_lists),
 )
-parser.add_argument(
-    "-w", "--weight", default="imagenet", help="Encoder pretrained weight"
-)
+parser.add_argument("-w", "--weight", default=None, help="Encoder pretrained weight")
 parser.add_argument("--activation", default="sigmoid")
 parser.add_argument(
     "--arch",
@@ -57,7 +53,14 @@ parser.add_argument("-depth", "--encoder_depth", type=int, default=5)
 parser.add_argument("-b", "--batch_size", type=int, default=16)
 parser.add_argument("-lr", "--learning_rate", type=float, default=5e-5)
 parser.add_argument("-wd", "--weight_decay", type=float, default=5e-4)
+parser.add_argument("--momentum", type=float, default=0.9)
 parser.add_argument("--threshold", type=float, default=0.6)
+parser.add_argument(
+    "--save_threshold",
+    type=float,
+    default=0.0,
+    help="Save model if model score greater than threshold",
+)
 parser.add_argument("--patience", default=2, type=int)
 parser.add_argument("--num_workers", type=int, default=12)
 parser.add_argument("--num_epoch", default=10, type=int)
@@ -80,6 +83,8 @@ arch_dict = {
         encoder_weights=args.weight,
         classes=8,
         activation=args.activation,
+        decoder_attention_type="scse",
+        decoder_use_batchnorm=True,
     ),
     "linknet": smp.Linknet(
         encoder_name=args.encoder,
@@ -168,21 +173,30 @@ def main():
         valid_dataset,
         batch_size=args.batch_size,
         shuffle=False,
-        num_workers=int(args.num_workers / 3),
+        num_workers=args.num_workers,
     )
-    model = arch_dict[args.arch]
+
     if args.resume:
         checkpoints = torch.load(args.resume)
         state_dict = OrderedDict()
         for key, value in checkpoints["state_dict"].items():
             tmp = key[7:]
             state_dict[tmp] = value
+
+        model = arch_dict[checkpoints["arch"]]
         model.load_state_dict(state_dict)
         logger.info(
             f"=> loaded checkpoint '{args.resume}' (epoch {args.resume.split('_')[-2]})"
         )
+        optimizer = RAdam(
+            model.parameters(), lr=args.learning_rate, weight_decay=args.weight_decay
+        )
+        optimizer.load_state_dict(checkpoints["optimizer"])
     else:
         model = arch_dict[args.arch]
+        optimizer = RAdam(
+            model.parameters(), lr=args.learning_rate, weight_decay=args.weight_decay
+        )
 
     if args.parallel:
         model = torch.nn.DataParallel(model).cuda()
@@ -192,13 +206,17 @@ def main():
         FWIoU(threshold=args.threshold, frequency=cls_frequency),
     ]
     loss = smp.utils.losses.JaccardLoss()
-    optimizer = RAdam(
-        model.parameters(), lr=args.learning_rate, weight_decay=args.weight_decay
-    )
+
     # scheduler = optim.lr_scheduler.ReduceLROnPlateau(
-    #     optimizer, mode="min", factor=0.2, patience=args.patience, verbose=True
+    #     optimizer, mode="min", factor=0.5, patience=args.patience, verbose=True
     # )
-    scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=5, eta_min=5e-8)
+    # scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=10, eta_min=1e-4)
+    scheduler = PolynomialLRDecay(
+        optimizer, max_decay_steps=1000, end_learning_rate=5e-10, power=0.7
+    )
+    # optimizer.param_groups[0].update(
+    #     {"lr": args.learning_rate, "wd": args.weight_decay}
+    # )
     train_epoch = smp.utils.train.TrainEpoch(
         model,
         loss=loss,
@@ -220,28 +238,22 @@ def main():
     if not args.test:
         checkpoint_path.mkdir(parents=True, exist_ok=True)
 
-    max_score = float(checkpoints["best_iou"]) if args.resume else 0.0
+    max_score = float(checkpoints["best_fwiou"]) if args.resume else 0.0
     start_epoch = int(checkpoints["epoch"]) if args.resume else 0
     end_epoch = start_epoch + args.num_epoch
-
+    logger.info(f"Current best score: {max_score:.4f}")
     for epoch in range(start_epoch, end_epoch):
         start = datetime.now()
-        logger.info(
-            "Epoch: [%d | %d] LR: %f"
-            % (epoch, end_epoch, optimizer.param_groups[0]["lr"])
-        )
         train_logs = train_epoch.run(train_loader)
         valid_logs = valid_epoch.run(valid_loader)
         train_loss, train_iou, train_fwiou = train_logs.values()
         val_loss, val_iou, val_fwiou = valid_logs.values()
         logger.info(
-            f"train loss: {train_loss:.4f} | val loss: {val_loss:.4f} | train iou: {train_iou:.4f} | val iou: {val_iou:.4f} | train fwiou: {train_fwiou:.4f} | val fwiou: {val_fwiou:.4f} | elapsed: {(datetime.now()-start).total_seconds()/60:.1f}mins"
+            f"epoch [{epoch:03d} | {end_epoch:03d}] | lr: {optimizer.param_groups[0]['lr']:f} | train loss: {train_loss:.4f} | val loss: {val_loss:.4f} | train iou: {train_iou:.4f} | val iou: {val_iou:.4f} | train fwiou: {train_fwiou:.4f} | val fwiou: {val_fwiou:.4f} | elapsed: {(datetime.now()-start).total_seconds()/60:.1f}mins"
         )
-        # scheduler.step(val_loss)
-        scheduler.step()
-
-        if max_score < val_iou and not args.test:
-            max_score = val_iou
+        scheduler.step(val_loss)
+        if all([max_score < val_fwiou, val_fwiou > args.save_threshold, not args.test]):
+            max_score = val_fwiou
             save_checkpoint(
                 {
                     "epoch": epoch,
@@ -254,9 +266,9 @@ def main():
                     "optimizer": optimizer.state_dict(),
                     "activation": args.activation,
                 },
-                checkpoint_path.joinpath(f"epoch_{epoch}_{val_iou:.4f}.pth"),
+                checkpoint_path.joinpath(f"epoch_{epoch}_{val_fwiou:.4f}.pth"),
             )
-            logger.info("Save checkpoint!")
+            logger.info(f"Save checkpoint at {epoch}.")
 
 
 if __name__ == "__main__":
