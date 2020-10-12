@@ -21,5 +21,5 @@ def hist_equalizer(img):
     clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
     clahe.apply(channels[2], channels[1])
 
-    cv2.merge(channels, hsv)
+    img = cv2.merge(channels, hsv)
     return img
