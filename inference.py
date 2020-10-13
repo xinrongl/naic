@@ -9,6 +9,7 @@ import segmentation_models_pytorch as smp
 import torch
 from torch.utils.data import DataLoader
 from tqdm import tqdm
+from tools.correct_small_area import correct_small_area
 
 from src.data.aug import get_preprocessing
 from src.data.dataset import NAICTestDataset
@@ -29,6 +30,8 @@ arch_dict = {
         encoder_weights=checkpoint["encoder_weight"],
         classes=8,
         activation=checkpoint["activation"],
+        decoder_attention_type="scse",
+        decoder_use_batchnorm=True,
     ),
     "linknet": smp.Linknet(
         encoder_name=checkpoint["encoder"],
@@ -67,6 +70,8 @@ arch_dict = {
         activation=checkpoint["activation"],
     ),
 }
+
+
 device = "cuda:0" if torch.cuda.is_available() else "cpu"
 model = arch_dict[checkpoint["arch"]]
 state_dict = OrderedDict()
@@ -94,7 +99,9 @@ with torch.no_grad():
         for mask, cls in zip(pred, range(100, 801, 100)):
             cls_mask = mask == 1.0
             out_mask[cls_mask] = cls
+
+        corrected_mask = correct_small_area(in_mask=out_mask)
         cv2.imwrite(
             str(out_dir.joinpath(filename[0].replace(".tif", ".png"))),
-            out_mask.astype(np.uint16),
+            corrected_mask,
         )
