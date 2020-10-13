@@ -76,9 +76,9 @@ if __name__ == "__main__":
     output_dir.joinpath("label").mkdir(parents=True, exist_ok=True)
 
     with open(args.input_dir.joinpath("dst_img_id.txt"), "r") as f1:
-        dst_id_list = [l.rstrip("\n") for l in f1]
+        dst_id_list = [l1.rstrip("\n") for l1 in f1]
     with open(args.input_dir.joinpath("src_img_id.txt"), "r") as f2:
-        src_id_list = [l.rstrip("\n") for l in f2]
+        src_id_list = [l2.rstrip("\n") for l2 in f2]
     maxnum = min(len(dst_id_list), len(src_id_list))
     assert args.num <= maxnum, f"maximum mixup is {maxnum}"
     random.shuffle(dst_id_list)

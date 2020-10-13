@@ -29,16 +29,15 @@ args = parser.parse_args()
 args.output_dir.mkdir(exist_ok=True, parents=True)
 
 
-def correct_small_area(filename, save_dir):
-    in_mask = cv2.imread(str(filename), -1)
+def correct_small_area(in_mask, threshold):
     out_mask = np.zeros((256, 256))
     for cls in np.unique(in_mask):
         cls_mask = cls == in_mask
         remove_small_objects(
-            cls_mask, min_size=args.threshold, connectivity=4, in_place=True
+            cls_mask, min_size=threshold, connectivity=4, in_place=True
         )
         remove_small_holes(
-            cls_mask, area_threshold=args.threshold, connectivity=4, in_place=True
+            cls_mask, area_threshold=threshold, connectivity=4, in_place=True
         )
         out_mask[cls_mask] = cls
     for cls in np.unique(in_mask):
@@ -47,14 +46,20 @@ def correct_small_area(filename, save_dir):
             out_mask[cls_mask] = cls
         else:
             out_mask[cls_mask & (out_mask == 0)] = cls
-    cv2.imwrite(f"{save_dir}/{filename.parts[-1]}", out_mask.astype(np.uint16))
+    return out_mask.astype(np.uint16)
+
+
+def _submit(save_dir, filename):
+    in_mask = cv2.imread(filename, -1)
+    corrected_mask = correct_small_area(in_mask, threshold=args.threshold)
+    cv2.imwrite(f"{save_dir}/{filename.parts[-1]}", corrected_mask.astype(np.uint16))
 
 
 if __name__ == "__main__":
     filenames = list(args.input_dir.glob("*"))
     with futures.ThreadPoolExecutor() as executor:
         results = [
-            executor.submit(correct_small_area, filename, args.output_dir)
+            executor.submit(_submit, args.output_dir, filename)
             for filename in filenames
         ]
         for f in tqdm(futures.as_completed(results), total=len(results)):

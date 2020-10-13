@@ -1,12 +1,13 @@
-import os
-import sys
-from pathlib import Path
 import argparse
+import os
+import shutil
+import sys
 from concurrent import futures
-from tqdm import tqdm
+from pathlib import Path
+
 import cv2
 import pandas as pd
-import shutil
+from tqdm import tqdm
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from utils import cv2_imread

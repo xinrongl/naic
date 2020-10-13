@@ -2,7 +2,6 @@ from pathlib import Path, PurePath
 
 import cv2
 import numpy as np
-import torch
 from torch.utils.data import Dataset
 
 
