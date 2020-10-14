@@ -38,7 +38,9 @@ parser.add_argument(
     default="efficientnet-b5",
     help="model encoder: " + " | ".join(encoder_lists),
 )
-parser.add_argument("-w", "--weight", default=None, help="Encoder pretrained weight")
+parser.add_argument(
+    "-w", "--weight", default=None, help="Encoder pretrained weight", required=True
+)
 parser.add_argument("--activation", default="sigmoid")
 parser.add_argument(
     "--arch",
@@ -212,7 +214,7 @@ def main():
     # )
     # scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=10, eta_min=1e-4)
     scheduler = PolynomialLRDecay(
-        optimizer, max_decay_steps=1000, end_learning_rate=5e-10, power=0.7
+        optimizer, max_decay_steps=1000, end_learning_rate=5e-8, power=0.7
     )
     # optimizer.param_groups[0].update(
     #     {"lr": args.learning_rate, "wd": args.weight_decay}
@@ -238,18 +240,19 @@ def main():
     if not args.test:
         checkpoint_path.mkdir(parents=True, exist_ok=True)
 
-    max_score = float(checkpoints["best_fwiou"]) if args.resume else 0.0
-    start_epoch = int(checkpoints["epoch"]) if args.resume else 0
+    max_score = checkpoints["best_fwiou"] if args.resume else 0.0
+    start_epoch = checkpoints["epoch"] + 1 if args.resume else 0
     end_epoch = start_epoch + args.num_epoch
     logger.info(f"Current best score: {max_score:.4f}")
+    # optimizer.param_groups[0]["lr"] = args.learning_rate
+    logger.info(f"Start learning rate: {optimizer.param_groups[0]['lr']:f}")
     for epoch in range(start_epoch, end_epoch):
-        start = datetime.now()
         train_logs = train_epoch.run(train_loader)
         valid_logs = valid_epoch.run(valid_loader)
         train_loss, train_iou, train_fwiou = train_logs.values()
         val_loss, val_iou, val_fwiou = valid_logs.values()
         logger.info(
-            f"epoch [{epoch:03d} | {end_epoch:03d}] | lr: {optimizer.param_groups[0]['lr']:f} | train loss: {train_loss:.4f} | val loss: {val_loss:.4f} | train iou: {train_iou:.4f} | val iou: {val_iou:.4f} | train fwiou: {train_fwiou:.4f} | val fwiou: {val_fwiou:.4f} | elapsed: {(datetime.now()-start).total_seconds()/60:.1f}mins"
+            f"epoch [{epoch:03d} | {end_epoch:03d}] | lr: {optimizer.param_groups[0]['lr']:f} | train loss: {train_loss:.4f} | val loss: {val_loss:.4f} | train iou: {train_iou:.4f} | val iou: {val_iou:.4f} | train fwiou: {train_fwiou:.4f} | val fwiou: {val_fwiou:.4f}"
         )
         scheduler.step(val_loss)
         if all([max_score < val_fwiou, val_fwiou > args.save_threshold, not args.test]):
