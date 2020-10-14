@@ -20,6 +20,11 @@ parser.add_argument(
     "--input_dir", help="Path to test image directory", default="./data/image_A"
 )
 parser.add_argument("-dst", "--output_dir", help="Path to store output mask")
+parser.add_argument(
+    "--postprocessing",
+    type="store_true",
+    help="Remove isolated small area from predicted mask",
+)
 args = parser.parse_args()
 
 
@@ -99,9 +104,10 @@ with torch.no_grad():
         for mask, cls in zip(pred, range(100, 801, 100)):
             cls_mask = mask == 1.0
             out_mask[cls_mask] = cls
-
-        corrected_mask = correct_small_area(in_mask=out_mask)
+        if args.postprocessing:
+            out_mask = correct_small_area(in_mask=out_mask, threshold=150)
+        out_mask = out_mask.astype(np.uint16)
         cv2.imwrite(
             str(out_dir.joinpath(filename[0].replace(".tif", ".png"))),
-            corrected_mask,
+            out_mask,
         )
