@@ -10,24 +10,6 @@ import numpy as np
 from skimage.morphology import remove_small_holes, remove_small_objects
 from tqdm import tqdm
 
-parser = argparse.ArgumentParser("Postprocess small object from the predicted mask.")
-parser.add_argument(
-    "--input_dir",
-    type=lambda x: Path(x),
-    required=True,
-    help="Directory to the predicted mask.",
-)
-parser.add_argument(
-    "--output_dir",
-    type=lambda x: Path(x),
-    required=True,
-    help="Directory to output the corrected mask.",
-)
-parser.add_argument("-t", "--threshold", type=int, default=100)
-
-args = parser.parse_args()
-args.output_dir.mkdir(exist_ok=True, parents=True)
-
 
 def correct_small_area(in_mask, threshold):
     out_mask = np.zeros((256, 256))
@@ -56,6 +38,25 @@ def _submit(save_dir, filename):
 
 
 if __name__ == "__main__":
+    parser = argparse.ArgumentParser(
+        "Postprocess small object from the predicted mask."
+    )
+    parser.add_argument(
+        "--input_dir",
+        type=lambda x: Path(x),
+        required=True,
+        help="Directory to the predicted mask.",
+    )
+    parser.add_argument(
+        "--output_dir",
+        type=lambda x: Path(x),
+        required=True,
+        help="Directory to output the corrected mask.",
+    )
+    parser.add_argument("-t", "--threshold", type=int, default=100)
+
+    args = parser.parse_args()
+    args.output_dir.mkdir(exist_ok=True, parents=True)
     filenames = list(args.input_dir.glob("*"))
     with futures.ThreadPoolExecutor() as executor:
         results = [
