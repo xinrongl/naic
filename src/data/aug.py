@@ -26,10 +26,10 @@ def get_training_augmentation():
             [albu.RandomContrast(p=1), albu.HueSaturationValue(p=1)],
             p=0.9,
         ),
-        # albu.Normalize(
-        #     mean=(90.93 / 255, 97.91 / 255, 91.62 / 255),
-        #     std=(52.687 / 255, 51.55 / 255, 53.571 / 255),
-        # ),
+        albu.Normalize(
+            mean=(90.63, 97.91, 91.62),
+            std=(52.687, 51.55, 53.571),
+        ),
     ]
     return albu.Compose(train_transform)
 
