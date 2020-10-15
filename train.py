@@ -1,6 +1,6 @@
 # (1) train segmentation model from the scratch using deeplabv3plus and efficientnet-b3 as encoder.
 # cd naic
-# python train.py --encoder efficientnet-b3 --weight imagenet --arch deeplabv3plus --batch_size 48 --num_workers 12 --parallel --num_epoch 10
+# python train.py --encoder resnext50_32x4d -w imagenet --arch unet -b 64 -lr 5e-5 -wd 5e-6 --num_workers 12 --num_epoch 100 --resume checkpoints/unet_resnext50_32x4d/202010141837/epoch_197_0.7504.pth --parallel
 import argparse
 import configparser
 from collections import OrderedDict
@@ -207,7 +207,8 @@ def main():
         smp.utils.metrics.IoU(threshold=args.threshold),
         FWIoU(threshold=args.threshold, frequency=cls_frequency),
     ]
-    loss = smp.utils.losses.JaccardLoss()
+    # loss = smp.utils.losses.JaccardLoss()
+    loss = smp.utils.losses.BCELoss()
 
     # scheduler = optim.lr_scheduler.ReduceLROnPlateau(
     #     optimizer, mode="min", factor=0.5, patience=args.patience, verbose=True
