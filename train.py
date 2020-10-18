@@ -56,14 +56,14 @@ parser.add_argument("-b", "--batch_size", type=int, default=16)
 parser.add_argument("-lr", "--learning_rate", type=float, default=5e-5)
 parser.add_argument("-wd", "--weight_decay", type=float, default=5e-4)
 parser.add_argument("--momentum", type=float, default=0.9)
-parser.add_argument("--threshold", type=float, default=0.6)
+parser.add_argument("--threshold", type=float, default=0.5)
 parser.add_argument(
     "--save_threshold",
     type=float,
-    default=0.0,
+    default=0.5,
     help="Save model if model score greater than threshold",
 )
-parser.add_argument("--patience", default=2, type=int)
+parser.add_argument("--patience", default=5, type=int)
 parser.add_argument("--num_workers", type=int, default=12)
 parser.add_argument("--num_epoch", default=10, type=int)
 parser.add_argument("--loglevel", default="INFO")
@@ -75,10 +75,20 @@ parser.add_argument(
     help="path to latest checkpoint (default: none)",
 )
 parser.add_argument(
+    "--load",
+    default="",
+    type=str,
+    metavar="PATH",
+    help="path to latest checkpoint (default: none)",
+)
+parser.add_argument(
     "--parallel", action="store_true", help="Use multi-gpus for training"
 )
 parser.add_argument("--test", action="store_true", help="Test code use small dataset")
 args, _ = parser.parse_known_args()
+
+aux_params_dict = dict(pooling="avg", dropout=0.5, activation="softmax", classes=8)
+
 arch_dict = {
     "unet": smp.Unet(
         encoder_name=args.encoder,
@@ -87,6 +97,7 @@ arch_dict = {
         activation=args.activation,
         decoder_attention_type="scse",
         decoder_use_batchnorm=True,
+        aux_params=aux_params_dict,
     ),
     "linknet": smp.Linknet(
         encoder_name=args.encoder,
@@ -117,12 +128,14 @@ arch_dict = {
         encoder_weights=args.weight,
         classes=8,
         activation=args.activation,
+        aux_params=aux_params_dict,
     ),
     "pan": smp.PAN(
         encoder_name=args.encoder,
         encoder_weights=args.weight,
         classes=8,
         activation=args.activation,
+        aux_params=aux_params_dict,
     ),
 }
 
@@ -136,6 +149,7 @@ def main():
     # images_dir = data_dir.joinpath("image")
     images_dir = Path(config["train"]["image_dir"])
     logger.info(f"Loading images from {images_dir}")
+
     masks_dir = data_dir.joinpath("label")
     label_df = pd.read_csv(data_dir.joinpath("label_90.csv"))
     if args.test:
@@ -193,7 +207,22 @@ def main():
         optimizer = RAdam(
             model.parameters(), lr=args.learning_rate, weight_decay=args.weight_decay
         )
-        optimizer.load_state_dict(checkpoints["optimizer"])
+        # optimizer.load_state_dict(checkpoints["optimizer"])
+    elif args.load:
+        checkpoints = torch.load(args.resume)
+        state_dict = OrderedDict()
+        for key, value in checkpoints["state_dict"].items():
+            tmp = key[7:]
+            state_dict[tmp] = value
+
+        model = arch_dict[checkpoints["arch"]]
+        model.load_state_dict(state_dict)
+        logger.info(
+            f"=> loaded checkpoint '{args.resume}' (epoch {args.resume.split('_')[-2]})"
+        )
+        optimizer = RAdam(
+            model.parameters(), lr=args.learning_rate, weight_decay=args.weight_decay
+        )
     else:
         model = arch_dict[args.arch]
         optimizer = RAdam(
@@ -207,16 +236,18 @@ def main():
         smp.utils.metrics.IoU(threshold=args.threshold),
         FWIoU(threshold=args.threshold, frequency=cls_frequency),
     ]
-    # loss = smp.utils.losses.JaccardLoss()
-    loss = smp.utils.losses.BCELoss()
 
-    # scheduler = optim.lr_scheduler.ReduceLROnPlateau(
-    #     optimizer, mode="min", factor=0.5, patience=args.patience, verbose=True
-    # )
-    # scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=10, eta_min=1e-4)
-    scheduler = PolynomialLRDecay(
-        optimizer, max_decay_steps=1000, end_learning_rate=5e-8, power=0.7
+    # loss = smp.utils.losses.CrossEntropyLoss()
+    # loss = smp.utils.losses.BCELoss()
+    loss = smp.utils.losses.JaccardLoss()
+
+    scheduler = optim.lr_scheduler.ReduceLROnPlateau(
+        optimizer, mode="min", factor=0.5, patience=args.patience, verbose=True
     )
+    # scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=10, eta_min=1e-4)
+    # scheduler = PolynomialLRDecay(
+    #     optimizer, max_decay_steps=1000, end_learning_rate=5e-8, power=0.7
+    # )
     # optimizer.param_groups[0].update(
     #     {"lr": args.learning_rate, "wd": args.weight_decay}
     # )

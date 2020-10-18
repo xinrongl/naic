@@ -48,6 +48,7 @@ class NAICTrainDataset(Dataset):
         # extract certain classes from mask (e.g. cars)
         masks = [(mask == v) for v in self.class_values]
         mask = np.stack(masks, axis=-1).astype("float")
+        # mask = mask // 100 - 1
 
         # apply augmentations
         if self.augmentation:
@@ -58,7 +59,6 @@ class NAICTrainDataset(Dataset):
         if self.preprocessing:
             sample = self.preprocessing(image=image, mask=mask)
             image, mask = sample["image"], sample["mask"]
-
         return image, mask
 
     def __len__(self):

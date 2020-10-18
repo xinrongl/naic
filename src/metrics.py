@@ -40,7 +40,13 @@ def fwiou(pr, gt, eps=1e-7, frequency=None, threshold=None, ignore_channels=None
 
     pr = _threshold(pr, threshold=threshold)
     pr, gt = _take_channels(pr, gt, ignore_channels=ignore_channels)
-    bs, c, h, w = pr.size()
+    if len(pr.size()) < 4:
+        pr = [(pr == v) for v in range(8)]
+        pr = torch.stack(pr, dim=1)
+        gt = [(gt == v) for v in range(8)]
+        gt = torch.stack(gt, dim=1)
+
+    bs, c, h, w = pr.size()    
     if frequency is None:
         frequency = [1] * c
     weight = np.stack([np.full((h, w), f) for f in frequency])

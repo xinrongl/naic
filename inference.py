@@ -11,7 +11,7 @@ from torch.utils.data import DataLoader
 from tqdm import tqdm
 from tools.correct_small_area import correct_small_area
 
-from src.data.aug import get_preprocessing
+from src.data.aug import get_preprocessing, get_test_augmentation
 from src.data.dataset import NAICTestDataset
 
 parser = argparse.ArgumentParser("Inference")
@@ -90,7 +90,9 @@ preprocessing_fn = smp.encoders.get_preprocessing_fn(
     checkpoint["encoder"], checkpoint["encoder_weight"]
 )
 test_dataset = NAICTestDataset(
-    test_dir=args.input_dir, preprocessing=get_preprocessing(preprocessing_fn)
+    test_dir=args.input_dir,
+    augmentation=get_test_augmentation(),
+    preprocessing=get_preprocessing(preprocessing_fn),
 )
 print(f"Number of testing image: {len(test_dataset)}")
 test_loader = DataLoader(test_dataset, batch_size=1, shuffle=False)
