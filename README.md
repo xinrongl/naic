@@ -114,7 +114,7 @@ By default, model will be saved at `$PROJECTROOT/checkpoints` and log will be sa
 We provide inference script to output the prediction to desired directory. Simple using the following command to set `checkpoint`, `input_dir` and `output_dir`.
 
 ```shell
-python inference.py --checkpoint checkpoints/deeplabv3plus_efficientnet-b3/202010041423/epoch_9_0.6591.pth --input_dir data/image_A --output_dir ./results
+python inference.py --checkpoint checkpoints/deeplabv3plus_efficientnet-b3/202010041423/epoch_209_0.8191.pth --input_dir data/image_A --output_dir ./results
 ```
 
 
